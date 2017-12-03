@@ -10,9 +10,9 @@ A reinforcement learning model Q-learning used in simple maze game.
  - ~~The final training on test may sometimes gets stucked, please try again before I fix it.~~
  I have fix it at 2017.12.03, and add another type of object, and a mode that randomly gives number of each kind of objexts.
  
- ![pic](https://github.com/AdamAlive/MarkdownRef/blob/master/277.gif?raw=true)
- 
  ![pic](https://github.com/AdamAlive/MarkdownRef/blob/master/278.gif?raw=true)
+ 
+ ![pic](https://github.com/AdamAlive/MarkdownRef/blob/master/279.gif?raw=true)
  
 *********************
 

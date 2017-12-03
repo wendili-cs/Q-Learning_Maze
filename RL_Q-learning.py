@@ -4,7 +4,9 @@ tensorflow 1.3
 By LiWenDi
 '''
 #使用Q-Learning方法
-
+#任意游戏区域
+#存在奖励、陷阱、大奖励三类物体
+#运行随机分配物体数量
 import numpy as np
 import random
 import itertools
@@ -13,8 +15,14 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 import os
 
-toTest = True
-testSteps = 100
+toTest = False
+testSteps = 500
+
+Envsize = 5 #场地边长
+
+randomObjects = True #是否随机分配物体数量
+initial_objects = [4,2,1] #奖励、陷阱、大奖励的数目
+crack_punishment = 0.5 #对于无效行动的惩罚
 
 class gameOb():
     def __init__(self, coordinates, size, intensity, channel, reward, name):
@@ -32,25 +40,27 @@ class gameEnv():
         self.sizeY = size
         self.action = 4
         self.objects = []
+        self.cracked_num = 0
         a = self.reset()
         plt.imshow(a, interpolation = "nearest")
 
     def reset(self):
         self.objects = []
-        hero = gameOb(self.newPosition(), 1, 1, 2, None, 'hero')
+        hero = gameOb(self.newPosition(), 1, 1, [2], None, 'hero')
         self.objects.append(hero)
-        goal = gameOb(self.newPosition(), 1, 1, 1, 1, 'goal')
-        self.objects.append(goal)
-        hole = gameOb(self.newPosition(), 1, 1, 0, -1, 'fire')
-        self.objects.append(hole)
-        goal2 = gameOb(self.newPosition(), 1, 1, 1, 1, 'goal')
-        self.objects.append(goal2)
-        hole2 = gameOb(self.newPosition(), 1, 1, 0, -1, 'fire')
-        self.objects.append(hole2)
-        goal3 = gameOb(self.newPosition(), 1, 1, 1, 1, 'goal')
-        self.objects.append(goal3)
-        goal4 = gameOb(self.newPosition(), 1, 1, 1, 1, 'goal')
-        self.objects.append(goal4)
+        if randomObjects:
+            initial_objects[0] = random.randint(2,6)
+            initial_objects[1] = random.randint(1,3)
+            initial_objects[2] = random.randint(0,2)
+        for i in range(initial_objects[0]):
+            tempGoal = gameOb(self.newPosition(), 1, 1, [1], 1, 'goal')
+            self.objects.append(tempGoal)
+        for i in range(initial_objects[1]):
+            tempHole = gameOb(self.newPosition(), 1, 1, [0], -1, 'fire')
+            self.objects.append(tempHole)
+        for i in range(initial_objects[2]):
+            tempBigGoal = gameOb(self.newPosition(), 1, 1, [0,1], 2, 'big_goal')
+            self.objects.append(tempBigGoal)
         state = self.renderEnv()
         self.state = state
         return state
@@ -67,6 +77,8 @@ class gameEnv():
             hero.x -= 1
         if direction == 3 and hero.x <= self.sizeX - 2:
             hero.x += 1
+        if hero.x == heroX and hero.y == heroY:
+            self.cracked_num += 1
         self.objects[0] = hero
 
     def newPosition(self):
@@ -85,6 +97,8 @@ class gameEnv():
 
     def checkGoal(self):
         others = []
+        punishment =  self.cracked_num
+        self.cracked_num = 0
         for obj in self.objects:
             if obj.name == 'hero':
                 hero = obj
@@ -93,12 +107,15 @@ class gameEnv():
         for other in others:
             if hero.x == other.x and hero.y == other.y:
                 self.objects.remove(other)
-                if other.reward == 1:
-                    self.objects.append(gameOb(self.newPosition(), 1, 1, 1, 1, 'goal'))
-                else:
-                    self.objects.append(gameOb(self.newPosition(), 1, 1, 0, -1, 'fire'))
-                return other.reward, False
-        return 0.0, False
+                if other.name == 'goal':
+                    self.objects.append(gameOb(self.newPosition(), 1, 1, [1], 1, 'goal'))
+                elif other.name ==  'fire':
+                    self.objects.append(gameOb(self.newPosition(), 1, 1, [0], -1, 'fire'))
+                elif other.name == 'big_goal':
+                    self.objects.append(gameOb(self.newPosition(), 1, 1, [0,1], 2, 'big_goal'))
+                
+                return other.reward - punishment*crack_punishment, False, punishment
+        return 0.0 - punishment*crack_punishment, False, punishment
 
     def renderEnv(self):
         a = np.ones([self.sizeY+2, self.sizeX+2, 3])
@@ -114,13 +131,13 @@ class gameEnv():
 
     def step(self, action):
         self.moveChar(action)
-        reward, done = self.checkGoal()
+        reward, done, cracks = self.checkGoal()
         state = self.renderEnv()
-        return state, reward, done
+        return state, reward, done, cracks
 
 #------------------------------------------------实例开始------------------------------------------------
 
-env = gameEnv(size = 5)
+env = gameEnv(size = Envsize)
 
 class Qnetwork():
     def __init__(self, h_size):
@@ -190,7 +207,7 @@ num_episodes = 10000
 pre_train_steps = 10000
 max_eplength = 50
 load_model = False
-path = "dqn/"
+path = "dqn_nocrack/"
 h_size = 512
 h_size = 512
 tau = 0.001
@@ -239,7 +256,7 @@ with tf.Session() as sess:
                     a = np.random.randint(0,4)
                 else:
                     a = sess.run(mainQN.predict, feed_dict = {mainQN.scalarInput:[s]})[0]
-                s1, r, d = env.step(a)
+                s1, r, d, c = env.step(a)
                 s1 = processState(s1)
                 total_steps += 1
                 episodeBuffer.add(np.reshape(np.array([s,a,r,s1,d]), [1,5]))
@@ -280,11 +297,14 @@ with tf.Session() as sess:
 
         for j in range(testSteps):
             a = sess.run(mainQN.predict, feed_dict = {mainQN.scalarInput:[s]})[0]
-            s1, r, d = env.step(a)
+            s1, r, d, c = env.step(a)
+            r = r + c * crack_punishment
             plt.imshow(s1)
-            print("第" + str(j) + "步。得分：" + str(r) + "    总分：" + str(rAll+r))
+            if c == 0:
+                print("第" + str(j) + "步。得分：" + str(r) + "    总分：" + str(rAll+r))
+            else:
+                print("第" + str(j) + "步，此次行动卡住！得分：" + str(r) + "    总分：" + str(rAll+r))
             plt.pause(0.15)
             s1 = processState(s1)
             rAll += r
             s = s1
-                

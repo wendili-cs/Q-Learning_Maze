@@ -16,7 +16,7 @@ import tensorflow as tf
 import os
 
 toTest = False
-testSteps = 500
+testSteps = 100
 
 Envsize = 5 #场地边长
 
